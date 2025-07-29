@@ -32,47 +32,62 @@ app.get("/webhook", (req, res) => {
 
 app.post("/webhook", async (req, res) => {
   try {
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const msg = value?.messages?.[0];
-    if (!msg) return res.sendStatus(200);
+    const webhookData = req.body;
 
-    const from = msg.from;
-    const type = msg.type;
-    let content = "";
-    let transcricao = null;
+    const messageObj = webhookData?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const phone_number = messageObj?.from;
+    const message_type = messageObj?.type;
 
-    if (type === "text") {
-      content = msg.text.body;
-    } else if (type === "audio") {
-      const mediaId = msg.audio.id;
-      const token = process.env.WHATSAPP_TOKEN;
-
-      const { data: mediaInfo } = await axios.get(
-        `https://graph.facebook.com/v19.0/${mediaId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      const { data: media } = await axios.get(mediaInfo.url, {
-        responseType: "arraybuffer",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const buffer = Buffer.from(media);
-      transcricao = await transcreverAudio(buffer);
-      content = "[Áudio recebido]";
+    if (!phone_number) {
+      return res.sendStatus(200);
     }
 
-    await db.query(
-      "INSERT INTO mensagens (remetente, tipo, conteudo, transcricao) VALUES (?, ?, ?, ?)",
-      [from, type, content, transcricao]
-    );
+    if (message_type === "text") {
+      const message_text = messageObj.text.body;
 
-    console.log("Mensagem salva:", { from, type, content, transcricao });
+      await db.query(
+        "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
+        [phone_number, message_text, "text"]
+      );
+
+      console.log("Texto salvo no banco:", message_text);
+    }
+
+    if (message_type === "audio") {
+      const media_id = messageObj.audio.id;
+
+      const response = await axios({
+        method: "GET",
+        url: `https://graph.facebook.com/v18.0/${media_id}`,
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        },
+      });
+
+      const audioUrl = response.data.url;
+
+      const audioData = await axios({
+        method: "GET",
+        url: audioUrl,
+        responseType: "arraybuffer",
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        },
+      });
+
+      const transcription = await transcreverAudio(audioData.data);
+
+      await db.query(
+        "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
+        [phone_number, transcription, "audio"]
+      );
+
+      console.log("Áudio transcrito e salvo no banco:", transcription);
+    }
+
     res.sendStatus(200);
-  } catch (err) {
-    console.error("Erro ao processar webhook:", err);
+  } catch (error) {
+    console.error("Erro ao processar webhook:", error);
     res.sendStatus(500);
   }
 });
