@@ -4,7 +4,7 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const mysql = require("mysql2/promise");
 const { transcreverAudio } = require("./whisper");
-const port =3000
+const port = 3000
 
 const app = express();
 app.use(bodyParser.json());
@@ -42,12 +42,44 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (message_type === "text") {
-      const message_text = messageObj.text.body;
+    const [existingUser] = await db.query("SELECT id FROM users WHERE phone_number = ?", [phone_number]);
+    let userId;
+    if (existingUser.length === 0) {
+      const result = await db.query("INSERT INTO users (phone_number) VALUES (?)", [phone_number]);
+      userId = result[0].insertId;
+    } else {
+      userId = existingUser[0].id;
+    }
 
+    if (message_type === "text") {
+      const message_text = messageObj.text.body.trim();
+
+      if (message_text.toLowerCase().startsWith("confirmar:")) {
+        const confirmado = message_text.slice("confirmar:".length).trim();
+        await db.query(
+          "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
+          [userId, confirmado, "audio"]
+        );
+
+        await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
+          messaging_product: "whatsapp",
+          to: phone_number,
+          text: { body: "✅ Transcrição confirmada e salva!" }
+        }, {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        console.log("Transcrição confirmada e salva:", confirmado);
+        return res.sendStatus(200);
+      }
+
+      // Mensagens comuns
       await db.query(
         "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
-        [phone_number, message_text, "text"]
+        [userId, message_text, "text"]
       );
 
       console.log("Texto salvo no banco:", message_text);
@@ -77,12 +109,18 @@ app.post("/webhook", async (req, res) => {
 
       const transcription = await transcreverAudio(audioData.data);
 
-      await db.query(
-        "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
-        [phone_number, transcription, "audio"]
-      );
+      await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
+        messaging_product: "whatsapp",
+        to: phone_number,
+        text: { body: `🤖 Transcrição: "${transcription}".\n\nSe estiver certo, envie:\n*confirmar: ${transcription}*` }
+      }, {
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      });
 
-      console.log("Áudio transcrito e salvo no banco:", transcription);
+      console.log("Transcrição enviada para confirmação:", transcription);
     }
 
     res.sendStatus(200);
