@@ -39,7 +39,14 @@ app.post("/webhook", async (req, res) => {
     const phone_number = messageObj?.from;
     const message_type = messageObj?.type;
 
+    const userconfirmartionPreferences = new Map();
+
     if (!phone_number) {
+      return res.sendStatus(200);
+    }
+
+    if (phone_number.startsWith("1646")) {
+      console.log("Mensagem automática da Meta ignorada.");
       return res.sendStatus(200);
     }
 
@@ -123,18 +130,30 @@ app.post("/webhook", async (req, res) => {
 
       const transcription = await transcreverAudio(audioData.data);
 
-      await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-        messaging_product: "whatsapp",
-        to: phone_number,
-        text: { body: `🤖 Transcrição: "${transcription}".\n\nSe estiver certo, envie:\n*confirmar: ${transcription}*` }
-      }, {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      });
+      // ✅ Verifica preferência do usuário
+      if (userconfirmartionPreferences.get(phone_number) === false) {
+        await db.query(
+          "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
+          [userId, transcription, "audio"]
+        );
+        console.log("Áudio salvo automaticamente:", transcription);
+      } else {
+        await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
+          messaging_product: "whatsapp",
+          to: phone_number,
+          type: "text",
+          text: {
+            body: `🤖 Transcrição: "${transcription}".\n\nSe estiver certo, envie:\n*confirmar: ${transcription}*`
+          }
+        }, {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        });
 
-      console.log("Transcrição enviada para confirmação:", transcription);
+        console.log("Transcrição enviada para confirmação:", transcription);
+      }
     }
 
     res.sendStatus(200);
