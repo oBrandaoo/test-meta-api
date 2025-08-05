@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const mysql = require("mysql2/promise");
 const { transcreverAudio } = require("./whisper");
+const { enviarMensagemTexto } = require("./service");
 const port = 3000
 
 const app = express();
@@ -49,6 +50,19 @@ app.post("/webhook", async (req, res) => {
       userId = result[0].insertId;
     } else {
       userId = existingUser[0].id;
+    }
+
+    if (message_type === "button") {
+      const payload = messageObj.button.payload;
+
+      if (payload === "confirmar_sim") {
+        userconfirmartionPreferences.set(phone_number, true);
+        await enviarMensagemTexto(phone_number, "Ok, suas mensagens precisarão ser confirmadas antes de salvar.");
+      } else if (payload === "confirmar_nao") {
+        userconfirmartionPreferences.set(phone_number, false);
+        await enviarMensagemTexto(phone_number, "Entendido, suas mensagens serão salvas automaticamente.")
+      }
+      return res.sendStatus(200);
     }
 
     if (message_type === "text") {
