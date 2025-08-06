@@ -17,6 +17,9 @@ const db = mysql.createPool({
   database: process.env.DB_NAME,
 });
 
+const userconfirmartionPreferences = new Map();
+const lastAudioTranscription = new Map();
+
 app.get("/webhook", (req, res) => {
   const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
   const mode = req.query["hub.mode"];
@@ -38,8 +41,6 @@ app.post("/webhook", async (req, res) => {
     const messageObj = webhookData?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const phone_number = messageObj?.from;
     const message_type = messageObj?.type;
-
-    const userconfirmartionPreferences = new Map();
 
     if (!phone_number) {
       return res.sendStatus(200);
@@ -63,11 +64,28 @@ app.post("/webhook", async (req, res) => {
       const payload = messageObj.button.payload;
 
       if (payload === "confirmar_sim") {
-        userconfirmartionPreferences.set(phone_number, true);
+        userConfirmationPreferences.set(phone_number, true);
         await enviarMensagemTexto(phone_number, "Ok, suas mensagens precisarão ser confirmadas antes de salvar.");
+
+        const last = lastAudioTranscription.get(phone_number);
+        if (last) {
+          await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
+            messaging_product: "whatsapp",
+            to: phone_number,
+            text: {
+              body: `Transcrição: "${last}".\n\nSe estiver certo, envie:\n*confirmar: ${last}*`
+            }
+          }, {
+            headers: {
+              Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+              "Content-Type": "application/json"
+            }
+          });
+        }
+
       } else if (payload === "confirmar_nao") {
-        userconfirmartionPreferences.set(phone_number, false);
-        await enviarMensagemTexto(phone_number, "Entendido, suas mensagens serão salvas automaticamente.")
+        userConfirmationPreferences.set(phone_number, false);
+        await enviarMensagemTexto(phone_number, "Entendido, suas mensagens serão salvas automaticamente.");
       }
       return res.sendStatus(200);
     }
@@ -77,27 +95,18 @@ app.post("/webhook", async (req, res) => {
 
       if (message_text.toLowerCase().startsWith("confirmar:")) {
         const confirmado = message_text.slice("confirmar:".length).trim();
+
         await db.query(
           "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
           [userId, confirmado, "audio"]
         );
 
-        await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-          messaging_product: "whatsapp",
-          to: phone_number,
-          text: { body: "✅ Transcrição confirmada e salva!" }
-        }, {
-          headers: {
-            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-            "Content-Type": "application/json"
-          }
-        });
-
+        await enviarMensagemTexto(phone_number, "✅ Transcrição confirmada e salva!");
+        lastAudioTranscription.delete(phone_number);
         console.log("Transcrição confirmada e salva:", confirmado);
         return res.sendStatus(200);
       }
 
-      // Mensagens comuns
       await db.query(
         "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
         [userId, message_text, "text"]
@@ -129,8 +138,8 @@ app.post("/webhook", async (req, res) => {
       });
 
       const transcription = await transcreverAudio(audioData.data);
+      lastAudioTranscription.set(phone_number, transcription);
 
-      // ✅ Verifica preferência do usuário
       if (userconfirmartionPreferences.get(phone_number) === false) {
         await db.query(
           "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
@@ -141,9 +150,30 @@ app.post("/webhook", async (req, res) => {
         await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
           messaging_product: "whatsapp",
           to: phone_number,
-          type: "text",
-          text: {
-            body: `🤖 Transcrição: "${transcription}".\n\nSe estiver certo, envie:\n*confirmar: ${transcription}*`
+          type: "interactive",
+          interactive: {
+            type: "button",
+            body: {
+              text: `Transcrição: "${transcription}"\n\nDeseja confirmar?`
+            },
+            action: {
+              buttons: [
+                {
+                  type: "reply",
+                  reply: {
+                    id: "confirmar_sim",
+                    title: "✅ Sim"
+                  }
+                },
+                {
+                  type: "reply",
+                  reply: {
+                    id: "confirmar_nao",
+                    title: "❌ Não"
+                  }
+                }
+              ]
+            }
           }
         }, {
           headers: {
