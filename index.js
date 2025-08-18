@@ -17,7 +17,7 @@ const db = mysql.createPool({
   database: process.env.DB_NAME,
 });
 
-const userconfirmartionPreferences = new Map();
+const userConfirmationPreferences = new Map();
 const lastAudioTranscription = new Map();
 
 app.get("/webhook", (req, res) => {
@@ -60,41 +60,53 @@ app.post("/webhook", async (req, res) => {
       userId = existingUser[0].id;
     }
 
-    if (message_type === "button") {
-      const payload = messageObj.button.payload;
+    if (messageObj.type === "interactive") {
+      const interactive = messageObj.interactive;
 
-      if (payload === "confirmar_sim") {
-        userConfirmationPreferences.set(phone_number, true);
-        await enviarMensagemTexto(phone_number, "Ok, suas mensagens precisarão ser confirmadas antes de salvar.");
+      if (interactive.type === "button_reply") {
+        const resposta = interactive.button_reply.id; // "confirmar_sim" ou "confirmar_nao"
+        console.log("Usuário clicou no botão:", resposta);
 
-        const last = lastAudioTranscription.get(phone_number);
-        if (last) {
-          await axios.post(`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`, {
-            messaging_product: "whatsapp",
-            to: phone_number,
-            text: {
-              body: `Transcrição: "${last}".\n\nSe estiver certo, envie:\n*confirmar: ${last}*`
-            }
-          }, {
-            headers: {
-              Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-              "Content-Type": "application/json"
-            }
-          });
+        if (resposta === "confirmar_sim") {
+          const confirmado = lastAudioTranscription.get(phone_number);
+
+          if (confirmado) {
+            await db.query(
+              "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
+              [userId, confirmado, "audio"]
+            );
+
+            await enviarMensagemTexto(phone_number, "✅ Transcrição confirmada e salva!");
+            lastAudioTranscription.delete(phone_number);
+            console.log("Transcrição confirmada e salva via botão:", confirmado);
+          }
+        } else if (resposta === "confirmar_nao") {
+          await enviarMensagemTexto(phone_number, "❌ Ok, mensagem descartada.");
+          lastAudioTranscription.delete(phone_number);
+          console.log("Usuário rejeitou a transcrição.");
         }
-
-      } else if (payload === "confirmar_nao") {
-        userConfirmationPreferences.set(phone_number, false);
-        await enviarMensagemTexto(phone_number, "Entendido, suas mensagens serão salvas automaticamente.");
       }
+
       return res.sendStatus(200);
     }
 
     if (message_type === "text") {
       const message_text = messageObj.text.body.trim();
 
-      if (message_text.toLowerCase().startsWith("confirmar:")) {
-        const confirmado = message_text.slice("confirmar:".length).trim();
+      await db.query(
+        "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
+        [userId, message_text, "text"]
+      );
+
+      console.log("Texto salvo no banco:", message_text);
+    }
+
+    if (message_type === "button") {
+      const payload = messageObj.button.payload; // vem do botão
+      console.log("Payload do botão:", payload);
+
+      if (payload.toLowerCase().startsWith("confirmar:")) {
+        const confirmado = payload.slice("confirmar:".length).trim();
 
         await db.query(
           "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
@@ -103,16 +115,9 @@ app.post("/webhook", async (req, res) => {
 
         await enviarMensagemTexto(phone_number, "✅ Transcrição confirmada e salva!");
         lastAudioTranscription.delete(phone_number);
-        console.log("Transcrição confirmada e salva:", confirmado);
+        console.log("Transcrição confirmada e salva via botão:", confirmado);
         return res.sendStatus(200);
       }
-
-      await db.query(
-        "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
-        [userId, message_text, "text"]
-      );
-
-      console.log("Texto salvo no banco:", message_text);
     }
 
     if (message_type === "audio") {
@@ -140,7 +145,7 @@ app.post("/webhook", async (req, res) => {
       const transcription = await transcreverAudio(audioData.data);
       lastAudioTranscription.set(phone_number, transcription);
 
-      if (userconfirmartionPreferences.get(phone_number) === false) {
+      if (userConfirmationPreferences.get(phone_number) === false) {
         await db.query(
           "INSERT INTO messages (user_id, message, type) VALUES (?, ?, ?)",
           [userId, transcription, "audio"]
@@ -154,7 +159,7 @@ app.post("/webhook", async (req, res) => {
           interactive: {
             type: "button",
             body: {
-              text: `Transcrição: "${transcription}"\n\nDeseja confirmar?`
+              text: `Transcrição: ${transcription}\n\nDeseja confirmar?`
             },
             action: {
               buttons: [

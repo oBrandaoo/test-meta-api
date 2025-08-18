@@ -1,4 +1,5 @@
 require("dotenv").config();
+const axios = require("axios");
 
 async function enviarMensagemTexto(to, text) {
   await axios.post(

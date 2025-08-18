@@ -2,7 +2,7 @@
 - 22.18
 
 ### Rodar servidor 
-- node index.js  
+- npm run dev  
 
 ### Rodar ngrok
 - npx ngrok http 3000
