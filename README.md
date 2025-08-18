@@ -1,3 +1,6 @@
+### Versão do Node (LTS)
+- 22.18
+
 ### Rodar servidor 
 - node index.js  
 
