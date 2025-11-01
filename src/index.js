@@ -1,9 +1,9 @@
 require("dotenv").config();
 const express = require("express");
-const { initDatabase } = require("./database");
 const axios = require("axios");
 const ngrok = require("@ngrok/ngrok");
 
+const { initDatabase } = require("./database");
 const { createWebhookRouter } = require("./webhook");
 const { updateEnvVar, randomToken } = require("./config");
 
