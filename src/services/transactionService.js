@@ -26,29 +26,29 @@ async function registerCost(db, { userId, product, quantity, unitPrice }) {
   });
 }
 
-async function registerExpense(db, { userId, product, quantity, unitPrice }) {
+async function registerExpense(db, { userId, description, value }) {
   const total = quantity * unitPrice;
 
   return transactionRepo.insert(db, {
     userId,
     kind: "expense",
-    product,
-    quantity,
-    unitPrice,
-    total,
+    product: description,
+    quantity: 1,
+    unitPrice: value,
+    total: value,
   });
 }
 
-async function registerIncome(db, { userId, product, quantity, unitPrice }) {
+async function registerIncome(db, { userId, description, value }) {
   const total = quantity * unitPrice;
 
   return transactionRepo.insert(db, {
     userId,
     kind: "income",
-    product,
-    quantity,
-    unitPrice,
-    total,
+    product: description,
+    quantity: 1,
+    unitPrice: value,
+    total: value,
   });
 }
 

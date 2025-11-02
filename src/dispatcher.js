@@ -1,53 +1,80 @@
 const transactionService = require("./services/transactionService");
 
+const numberWords = {
+  um: 1, uma: 1,
+  dois: 2, duas: 2,
+  tres: 3, quatro: 4,
+  cinco: 5, seis: 6,
+  sete: 7, oito: 8,
+  nove: 9, dez: 10,
+};
+
+function parseNumber(str) {
+  return parseFloat(
+    str.replace("r$", "")
+       .replace("reais", "")
+       .replace(",", ".")
+       .trim()
+  );
+}
+
 async function dispatchText(db, { text, userId, reply }) {
   const lower = text.toLowerCase().trim();
 
-  // VENDA
-  const saleRegex1 = /vendi\s+R?\$?\s*([\d,.]+)\s+(?:com|no|na|em)?\s*(.+)/i;
-  const saleRegex2 = /vendi\s+(?:com|no|na|em)?\s*(.+?)\s+R?\$?\s*([\d,.]+)/i;
-  const saleMatch = lower.match(saleRegex1) || lower.match(saleRegex2);
+  // VENDAS
+  const saleRegex = /vendi\s+(\d+|\w+)?\s*([\w\s]+)?\s*(?:por|a)?\s*R?\$?\s*([\d,.]+)/i;
+  const saleMatch = lower.match(saleRegex);
 
   if (saleMatch) {
-    const quantity = saleMatch[1] ? parseInt(saleMatch[1]) : 1;
-    const product = saleMatch[2].trim();
-    let unitPrice = parseFloat(saleMatch[3].replace(",", "."));
+    let qtyRaw = saleMatch[1];
+    let product = (saleMatch[2] || "produto").trim();
+    let price = parseNumber(saleMatch[3]);
+
+    let quantity = 1;
+    if (qtyRaw) {
+      quantity = numberWords[qtyRaw] || parseInt(qtyRaw) || 1;
+    }
 
     await transactionService.registerSale(db, {
       userId,
       product,
       quantity,
-      unitPrice,
+      unitPrice: price,
     });
 
-    return reply(`✅ Venda registrada: ${quantity}x ${product} por R$ ${unitPrice}`);
+    return reply(`✅ Venda registrada: ${quantity}x ${product} por ${price}`);
   }
 
-  // CUSTO
-  const costRegex = /comprei\s+(\d+)?\s*([\w\s]+?)\s+(?:por|a)\s+([\d,\.]+)/i;
+  // CUSTOS
+  const costRegex = /comprei\s+(\d+|\w+)?\s*([\w\s]+)?\s*(?:por|a)?\s*R?\$?\s*([\d,.]+)/i;
   const costMatch = lower.match(costRegex);
 
   if (costMatch) {
-    const quantity = costMatch[1] ? parseInt(costMatch[1]) : 1;
-    const product = costMatch[2].trim();
-    let unitPrice = parseFloat(costMatch[3].replace(",", "."));
+    let qtyRaw = costMatch[1];
+    let product = (costMatch[2] || "item").trim();
+    let price = parseNumber(costMatch[3]);
+
+    let quantity = 1;
+    if (qtyRaw) {
+      quantity = numberWords[qtyRaw] || parseInt(qtyRaw) || 1;
+    }
 
     await transactionService.registerCost(db, {
       userId,
       product,
       quantity,
-      unitPrice,
-    })
+      unitPrice: price,
+    });
 
-    return reply(`🧾 Compra registrada: ${quantity}x ${product} por R$ ${unitPrice}`)
+    return reply(`🧾 Compra registrada: ${quantity}x ${product} por ${price}`);
   }
 
   // DESPESAS
-  const expenseRegex = /(gastei|paguei)\s+R?\$?\s*([\d,\.]+)\s*(.*)?/i;
+  const expenseRegex = /(gastei|paguei)\s+R?\$?\s*([\d,.]+)\s*(.*)?/i;
   const expenseMatch = lower.match(expenseRegex);
 
   if (expenseMatch) {
-    const value = parseFloat(expenseMatch[2].replace(",", "."));
+    const value = parseNumber(expenseMatch[2]);
     const desc = expenseMatch[3]?.trim() || "despesa";
 
     await transactionService.registerExpense(db, {
@@ -56,15 +83,15 @@ async function dispatchText(db, { text, userId, reply }) {
       value,
     });
 
-    return reply(`📉 Despesa registrada: R$ ${value} (${desc})`);
+    return reply(`📉 Despesa registrada: ${desc} (R$ ${value})`);
   }
 
   // ENTRADAS
-  const incomeRegex = /(recebi|ganhei)\s+R?\$?\s*([\d,\.]+)\s*(.*)?/i;
+  const incomeRegex = /(recebi|ganhei|entrou)\s+R?\$?\s*([\d,.]+)\s*(.*)?/i;
   const incomeMatch = lower.match(incomeRegex);
 
   if (incomeMatch) {
-    const value = parseFloat(incomeMatch[2].replace(",", "."));
+    const value = parseNumber(incomeMatch[2]);
     const desc = incomeMatch[3]?.trim() || "entrada";
 
     await transactionService.registerIncome(db, {
@@ -73,7 +100,7 @@ async function dispatchText(db, { text, userId, reply }) {
       value,
     });
 
-    return reply(`💰 Entrada registrada: R$ ${value} (${desc})`);
+    return reply(`💰 Entrada registrada: ${desc} (R$ ${value})`);
   }
 
   return reply("🤖 Não entendi. Exemplos:\n• vendi 2 coca por 7\n• comprei 3 água por 2\n• paguei 20 luz\n• recebi 100 pix");
