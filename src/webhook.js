@@ -42,20 +42,30 @@ function createWebhookRouter(db) {
 
       if (messageObj.type === "text") {
         const text = messageObj.text?.body || "";
-        await dispatchText(db, { text, userId, reply });
+        try {
+          await dispatchText(db, { text, userId, reply });
+        } catch (error) {
+          console.error("Erro ao processar mensagem de texto:", error);
+          reply("❌ Ocorreu um erro ao processar sua mensagem. Tente novamente.");
+        }
       }
 
       if (messageObj.type === "audio") {
-        const media_id = messageObj.audio.id;
-        const resp = await axios.get(`https://graph.facebook.com/v18.0/${media_id}`, {
-          headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }
-        });
-        const audioData = await axios.get(resp.data.url, {
-          responseType: "arraybuffer",
-          headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }
-        });
-        const transcription = await transcreverAudio(audioData.data);
-        await dispatchText(db, { text: transcription, userId, reply });
+        try {
+          const media_id = messageObj.audio.id;
+          const resp = await axios.get(`https://graph.facebook.com/v18.0/${media_id}`, {
+            headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }
+          });
+          const audioData = await axios.get(resp.data.url, {
+            responseType: "arraybuffer",
+            headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }
+          });
+          const transcription = await transcreverAudio(audioData.data);
+          await dispatchText(db, { text: transcription, userId, reply });
+        } catch (error) {
+          console.error("Erro ao processar áudio:", error);
+          reply("❌ Ocorreu um erro ao processar seu áudio. Tente enviar como texto.");
+        }
       }
 
       return res.sendStatus(200);
