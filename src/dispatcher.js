@@ -1,4 +1,6 @@
 const transactionService = require("./services/transactionService");
+const productService = require("./services/productService");
+const reportService = require("./services/reportService");
 const { enviarMensagemTexto } = require("./service")
 const { getSession, clearSession } = require("./session") 
 
@@ -141,7 +143,6 @@ async function dispatchText(db, { text, userId, reply }) {
   const productMatch = lower.match(productRegex);
 
   if (productMatch) {
-    const productService = require("./services/productService");
     const name = productMatch[1].trim();
     const price = parseNumber(productMatch[2]);
     
@@ -156,7 +157,6 @@ async function dispatchText(db, { text, userId, reply }) {
 
   // LISTAR PRODUTOS
   if (lower.includes("listar produtos") || lower.includes("meus produtos")) {
-    const productService = require("./services/productService");
     const products = await productService.listProducts(db, userId);
     
     if (products.length === 0) {
@@ -176,7 +176,6 @@ async function dispatchText(db, { text, userId, reply }) {
 
   // RELATÓRIOS
   if (lower.includes("relatorio") || lower.includes("relatório") || lower.includes("resumo")) {
-    const reportService = require("./services/reportService");
     const report = await reportService.getDailyReport(db, userId);
     
     let message = `📊 *Relatório de Hoje*\n\n`;
@@ -189,7 +188,6 @@ async function dispatchText(db, { text, userId, reply }) {
   }
 
   if (lower.includes("mais vendidos") || lower.includes("top produtos")) {
-    const reportService = require("./services/reportService");
     const topProducts = await reportService.getTopProducts(db, userId);
     
     if (topProducts.length === 0) {
