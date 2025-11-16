@@ -27,8 +27,6 @@ async function registerCost(db, { userId, product, quantity, unitPrice }) {
 }
 
 async function registerExpense(db, { userId, description, value }) {
-  const total = quantity * unitPrice;
-
   return transactionRepo.insert(db, {
     userId,
     kind: "expense",
@@ -40,8 +38,6 @@ async function registerExpense(db, { userId, description, value }) {
 }
 
 async function registerIncome(db, { userId, description, value }) {
-  const total = quantity * unitPrice;
-
   return transactionRepo.insert(db, {
     userId,
     kind: "income",
